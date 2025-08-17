@@ -1,0 +1,185 @@
+-- [[ Services & Vars ]] --
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+-- [[ Silent Aim Config ]] --
+local SilentAim = {
+    Enabled = true,
+    HitPart = "Head",  
+    Prediction = 0.165,
+    AimMethod = "Index", -- Can be "Index" or "Namecall"
+    FOV = {
+        Visible = true,
+        Transparency = 1,
+        Thickness = 1,
+        Radius = 120,
+        Color = Color3.fromRGB(255, 255, 255)
+    }
+}
+
+-- [[ Drawing FOV Circle ]] --
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Color = SilentAim.FOV.Color
+FOVCircle.Thickness = SilentAim.FOV.Thickness
+FOVCircle.Filled = false
+FOVCircle.Transparency = SilentAim.FOV.Transparency
+FOVCircle.Radius = SilentAim.FOV.Radius
+FOVCircle.Visible = SilentAim.FOV.Visible
+FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+-- [[ Get Closest Player ]] --
+local function GetClosestPlayer()
+    local ClosestDistance, ClosestPart = math.huge, nil
+    local CenterScreen = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    for _, Player in next, Players:GetPlayers() do
+        if Player ~= LocalPlayer and Player.Character then
+            local Character = Player.Character
+            local HitPart = Character:FindFirstChild(SilentAim.HitPart)
+            local Humanoid = Character:FindFirstChild("Humanoid")
+
+            if HitPart and Humanoid and Humanoid.Health > 0 then
+                local PredictedPos = HitPart.Position + (HitPart.Velocity * SilentAim.Prediction)
+                local ScreenPosition, Visible = Camera:WorldToScreenPoint(PredictedPos)
+
+                if Visible then
+                    local Distance = (CenterScreen - Vector2.new(ScreenPosition.X, ScreenPosition.Y)).Magnitude
+                    if Distance <= SilentAim.FOV.Radius and Distance < ClosestDistance then
+                        ClosestDistance = Distance
+                        ClosestPart = HitPart
+                    end
+                end
+            end
+        end
+    end
+
+    return ClosestPart
+end
+
+-- [[ Metatable Hook ]] --
+local mt = getrawmetatable(game)
+local oldIndex = mt.__index
+local oldNamecall = mt.__namecall
+setreadonly(mt, false)
+
+mt.__index = function(self, Index)
+    if not checkcaller() and SilentAim.Enabled and SilentAim.AimMethod == "Index" and self == LocalPlayer:GetMouse() then
+        if Index == "Hit" or Index == "Target" then
+            local Target = GetClosestPlayer()
+            if Target then
+                return CFrame.new(Target.Position)
+            end
+        end
+    end
+    return oldIndex(self, Index)
+end
+
+mt.__namecall = function(self, ...)
+    if not checkcaller() and SilentAim.Enabled and SilentAim.AimMethod == "Namecall" then
+        local method = getnamecallmethod()
+        if self == LocalPlayer:GetMouse() and (method == "Hit" or method == "Target") then
+            local Target = GetClosestPlayer()
+            if Target then
+                return CFrame.new(Target.Position)
+            end
+        end
+    end
+    return oldNamecall(self, ...)
+end
+
+-- [[ FOV Update ]] --
+RunService.RenderStepped:Connect(function()
+    if SilentAim.Enabled and SilentAim.FOV.Visible then
+        FOVCircle.Visible = true
+        FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        FOVCircle.Radius = SilentAim.FOV.Radius
+        FOVCircle.Color = SilentAim.FOV.Color
+    else
+        FOVCircle.Visible = false
+    end
+end)
+
+-- [[ GUI ]] --
+local gui = Instance.new("ScreenGui", game:GetService("CoreGui"))
+gui.Name = "AkiSilentGUI"
+gui.ResetOnSpawn = false
+
+-- Toggle Button (Movable)
+local toggleFrame = Instance.new("Frame", gui)
+toggleFrame.Size = UDim2.new(0, 140, 0, 40)
+toggleFrame.Position = UDim2.new(0.015, 0, 0.1, 0)
+toggleFrame.BackgroundColor3 = Color3.fromRGB(255, 105, 180) -- Pink
+toggleFrame.Active = true
+toggleFrame.Draggable = true
+
+Instance.new("UICorner", toggleFrame)
+
+local toggleButton = Instance.new("TextButton", toggleFrame)
+toggleButton.Size = UDim2.new(1, 0, 1, 0)
+toggleButton.Text = "Toggle Aki Silent"
+toggleButton.BackgroundTransparency = 1
+toggleButton.TextColor3 = Color3.new(1, 1, 1)
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.TextSize = 16
+
+-- Main Panel
+local mainPanel = Instance.new("Frame", gui)
+mainPanel.Size = UDim2.new(0, 220, 0, 130)
+mainPanel.Position = UDim2.new(0.05, 0, 0.4, 0)
+mainPanel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mainPanel.BorderSizePixel = 0
+mainPanel.Visible = false
+mainPanel.Active = true
+mainPanel.Draggable = true
+
+Instance.new("UICorner", mainPanel)
+
+local title = Instance.new("TextLabel", mainPanel)
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundTransparency = 1
+title.Text = "Aki Silent"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 20
+
+-- Prediction Input
+local predictionBox = Instance.new("TextBox", mainPanel)
+predictionBox.Position = UDim2.new(0.1, 0, 0.35, 0)
+predictionBox.Size = UDim2.new(0.8, 0, 0.2, 0)
+predictionBox.Text = tostring(SilentAim.Prediction)
+predictionBox.PlaceholderText = "Prediction"
+predictionBox.TextColor3 = Color3.new(1, 1, 1)
+predictionBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+predictionBox.Font = Enum.Font.SourceSans
+predictionBox.TextSize = 16
+predictionBox.ClearTextOnFocus = false
+
+predictionBox.FocusLost:Connect(function()
+    local val = tonumber(predictionBox.Text)
+    if val then
+        SilentAim.Prediction = val
+    end
+end)
+
+-- Aim Method Switch
+local aimSwitch = Instance.new("TextButton", mainPanel)
+aimSwitch.Position = UDim2.new(0.1, 0, 0.65, 0)
+aimSwitch.Size = UDim2.new(0.8, 0, 0.2, 0)
+aimSwitch.Text = "Switch Aim: " .. SilentAim.AimMethod
+aimSwitch.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+aimSwitch.TextColor3 = Color3.new(1, 1, 1)
+aimSwitch.Font = Enum.Font.SourceSansBold
+aimSwitch.TextSize = 14
+
+aimSwitch.MouseButton1Click:Connect(function()
+    SilentAim.AimMethod = SilentAim.AimMethod == "Index" and "Namecall" or "Index"
+    aimSwitch.Text = "Switch Aim: " .. SilentAim.AimMethod
+end)
+
+-- Toggle Panel Visibility
+toggleButton.MouseButton1Click:Connect(function()
+    mainPanel.Visible = not mainPanel.Visible
+end)
